@@ -606,23 +606,37 @@ function renderPantryToggles(){
     el.appendChild(makeToggleRow(canon, canon, on));
   });
 }
+function titleCase(s){
+  return s.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+}
+function canonicalizeIngredientName(raw){
+  const trimmed = (raw||'').trim();
+  if(!trimmed) return '';
+  const match = CANON_NAMES.find(n => n.toLowerCase() === trimmed.toLowerCase());
+  return match || titleCase(trimmed);
+}
+function registerCustomCanonName(name){
+  if(CANON_NAMES.includes(name)) return;
+  CANON_NAMES.push(name);
+  CANON[name] = CANON[name] || {category: 'Other'};
+  populateCanonList();
+}
 function addPantryItem(){
   const input = document.getElementById("pantryAddInput");
   const raw = input.value.trim();
   const msg = document.getElementById("pantryAddMsg");
   if(!raw) return;
-  const match = CANON_NAMES.find(n => n.toLowerCase() === raw.toLowerCase());
-  if(!match){
-    msg.textContent = "Not in the catalog\u2019s ingredient list yet \u2014 try the exact name (e.g. \"Honey Syrup\", \"Mint\").";
-    msg.className = "small missing";
-    return;
-  }
-  pantryAdditions.add(match);
-  pantryOverrides[match] = true;
+  const isNew = !CANON_NAMES.some(n => n.toLowerCase() === raw.toLowerCase());
+  const name = canonicalizeIngredientName(raw);
+  if(isNew) registerCustomCanonName(name);
+  pantryAdditions.add(name);
+  pantryOverrides[name] = true;
   localStorage.setItem("zachsBarPantryOverrides", JSON.stringify(pantryOverrides));
   savePantryAdditions();
   input.value = "";
-  msg.textContent = "Added " + match + " to Today\u2019s Fresh Goods.";
+  msg.textContent = isNew
+    ? ('Added "' + name + '" to Today’s Fresh Goods as a new ingredient.')
+    : ('Added ' + name + ' to Today’s Fresh Goods.');
   msg.className = "small";
   renderAll();
 }
@@ -669,16 +683,15 @@ function addShelfBottle(){
   const raw = input.value.trim();
   const msg = document.getElementById("shelfAddMsg");
   if(!raw) return;
-  const match = CANON_NAMES.find(n => n.toLowerCase() === raw.toLowerCase());
-  if(!match){
-    msg.textContent = "Not in the catalog\u2019s ingredient list yet \u2014 try the exact name (e.g. \"Campari\", \"Aperol\").";
-    msg.className = "small missing";
-    return;
-  }
-  shelfAdditions.add(match);
+  const isNew = !CANON_NAMES.some(n => n.toLowerCase() === raw.toLowerCase());
+  const name = canonicalizeIngredientName(raw);
+  if(isNew) registerCustomCanonName(name);
+  shelfAdditions.add(name);
   saveShelfAdditions();
   input.value = "";
-  msg.textContent = "Added " + match + " to your shelf.";
+  msg.textContent = isNew
+    ? ('Added "' + name + '" to your shelf as a new ingredient.')
+    : ('Added ' + name + ' to your shelf.');
   msg.className = "small";
   renderAll();
 }
@@ -760,7 +773,7 @@ function saveCustomRecipe(){
   const tags = tagsRaw ? tagsRaw.split(",").map(t=>t.trim().toLowerCase()).filter(Boolean) : [];
   const ingredients = [...document.querySelectorAll("#customIngredientRows .row")].map(row => {
     const amount = row.querySelector(".custom-ing-amt").value.trim();
-    const iname = row.querySelector(".custom-ing-name").value.trim();
+    const iname = canonicalizeIngredientName(row.querySelector(".custom-ing-name").value.trim());
     return {amount, name: iname};
   }).filter(i => i.name);
   if(!name){ msg.textContent = "Give the recipe a name first."; return; }
