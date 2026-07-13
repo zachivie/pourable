@@ -105,10 +105,6 @@ th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;le
 .roi-add-btn{background:none;border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:11.5px;
 color:var(--accent);cursor:pointer;font-family:'Inter',sans-serif;white-space:nowrap}
 .roi-add-btn:hover{background:var(--ok-bg)}
-.shelf-added-list{margin-top:12px;display:flex;flex-wrap:wrap;gap:6px}
-.shelf-added{display:inline-flex;align-items:center;gap:6px}
-.remove-shelf{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:0;line-height:1}
-.remove-shelf:hover{color:var(--bad)}
 .universal-search-row{display:flex;align-items:center;gap:10px;background:#fffdf8;border:1px solid var(--line);
 border-radius:12px;padding:2px 16px}
 .universal-search-row .search-icon{font-size:14px;flex:none;opacity:.55}
@@ -219,6 +215,11 @@ border-radius:12px;padding:2px 16px}
   <h2>Today's Fresh Goods</h2>
   <p class="small" style="margin-top:4px">What's actually fresh right now — toggle honestly, this won't touch the sheet.</p>
   <div class="pantry-toggles" id="pantryToggles"></div>
+  <div class="row" style="margin-top:14px">
+    <input type="text" id="pantryAddInput" list="canonList" placeholder="Have something not listed? Add it (e.g. Honey Syrup)" />
+    <button class="primary" id="btnPantryAdd">I Have It</button>
+  </div>
+  <p class="small" id="pantryAddMsg" style="margin-top:6px"></p>
 </section>
 
 <section class="panel" data-tab="shelf">
@@ -226,7 +227,6 @@ border-radius:12px;padding:2px 16px}
   <h2>Worth Adding to the Shelf</h2>
   <p class="small" style="margin-top:4px">The single bottle that unlocks the most new pours.</p>
   <table id="roiTable"><thead><tr><th>Bottle</th><th>Unlocks</th><th>Gets You Closer</th><th></th></tr></thead><tbody></tbody></table>
-  <div class="shelf-added-list" id="shelfAddedList"></div>
   <div class="row" style="margin-top:14px">
     <input type="text" id="shelfAddInput" list="canonList" placeholder="Just bought something? Add it here (e.g. Campari)" />
     <button class="primary" id="btnShelfAdd">Got It</button>
@@ -255,14 +255,20 @@ let fileHandle = null;
 let pantryOverrides = JSON.parse(localStorage.getItem("zachsBarPantryOverrides") || "{}");
 let favorites = new Set(JSON.parse(localStorage.getItem("zachsBarFavorites") || "[]"));
 let shelfAdditions = new Set(JSON.parse(localStorage.getItem("zachsBarShelfAdditions") || "[]"));
+let pantryAdditions = new Set(JSON.parse(localStorage.getItem("zachsBarPantryAdditions") || "[]"));
 let activeTags = new Set();
 let currentStatusFilter = "all";
+let lastCardResultCount = 0;
+let topSearchOwnsResult = false;
 
 function saveFavorites(){
   localStorage.setItem("zachsBarFavorites", JSON.stringify([...favorites]));
 }
 function saveShelfAdditions(){
   localStorage.setItem("zachsBarShelfAdditions", JSON.stringify([...shelfAdditions]));
+}
+function savePantryAdditions(){
+  localStorage.setItem("zachsBarPantryAdditions", JSON.stringify([...pantryAdditions]));
 }
 
 document.getElementById("btnToggleConn").addEventListener("click", () => {
@@ -280,7 +286,7 @@ document.querySelectorAll("#tabBar button").forEach(btn => {
     window.scrollTo({top:0, behavior:"smooth"});
   });
 });
-document.getElementById("universalSearch").addEventListener("input", () => goToTab("catalog"));
+
 
 if("serviceWorker" in navigator){
   window.addEventListener("load", () => {
@@ -446,6 +452,7 @@ function ownedSet(){
     }
   });
   shelfAdditions.forEach(c => s.add(c));
+  pantryAdditions.forEach(c => s.add(c));
   return s;
 }
 function evalRecipe(r, owned){
@@ -457,25 +464,59 @@ function statusLabel(r){
   return r.status==="now" ? "Ready to pour" : r.status==="one" ? "One bottle out" : r.status==="two" ? "Two bottles out" : r.missing.length + " bottles out";
 }
 
+function makeToggleRow(canon, label, on){
+  const row = document.createElement("div");
+  row.className = "toggle-row";
+  row.innerHTML = "<span>" + label + "</span><label class=\"switch\"><input type=\"checkbox\" " + (on?"checked":"") + " /><span class=\"switch-track\"></span></label>";
+  row.querySelector("input").addEventListener("change", e => {
+    pantryOverrides[canon] = e.target.checked;
+    localStorage.setItem("zachsBarPantryOverrides", JSON.stringify(pantryOverrides));
+    renderAll();
+  });
+  return row;
+}
 function renderPantryToggles(){
   const el = document.getElementById("pantryToggles");
   el.innerHTML = "";
+  const knownCanons = new Set();
   pantryRows.forEach(r => {
     const canon = (r["Canonical"]||"").trim();
     if(!canon) return;
+    knownCanons.add(canon.toLowerCase());
     const defaultOn = String(r["In Stock"]||"").trim().toLowerCase() === "yes";
     const on = pantryOverrides.hasOwnProperty(canon) ? pantryOverrides[canon] : defaultOn;
-    const row = document.createElement("div");
-    row.className = "toggle-row";
-    row.innerHTML = "<span>" + (r["Item"]||canon) + "</span><label class=\"switch\"><input type=\"checkbox\" " + (on?"checked":"") + " /><span class=\"switch-track\"></span></label>";
-    row.querySelector("input").addEventListener("change", e => {
-      pantryOverrides[canon] = e.target.checked;
-      localStorage.setItem("zachsBarPantryOverrides", JSON.stringify(pantryOverrides));
-      renderAll();
-    });
-    el.appendChild(row);
+    el.appendChild(makeToggleRow(canon, r["Item"]||canon, on));
+  });
+  pantryAdditions.forEach(canon => {
+    if(knownCanons.has(canon.toLowerCase())) return;
+    const on = pantryOverrides.hasOwnProperty(canon) ? pantryOverrides[canon] : true;
+    el.appendChild(makeToggleRow(canon, canon, on));
   });
 }
+function addPantryItem(){
+  const input = document.getElementById("pantryAddInput");
+  const raw = input.value.trim();
+  const msg = document.getElementById("pantryAddMsg");
+  if(!raw) return;
+  const match = CANON_NAMES.find(n => n.toLowerCase() === raw.toLowerCase());
+  if(!match){
+    msg.textContent = "Not in the catalog\u2019s ingredient list yet \u2014 try the exact name (e.g. \"Honey Syrup\", \"Mint\").";
+    msg.className = "small missing";
+    return;
+  }
+  pantryAdditions.add(match);
+  pantryOverrides[match] = true;
+  localStorage.setItem("zachsBarPantryOverrides", JSON.stringify(pantryOverrides));
+  savePantryAdditions();
+  input.value = "";
+  msg.textContent = "Added " + match + " to Today\u2019s Fresh Goods.";
+  msg.className = "small";
+  renderAll();
+}
+document.getElementById("btnPantryAdd").addEventListener("click", addPantryItem);
+document.getElementById("pantryAddInput").addEventListener("keydown", e => {
+  if(e.key === "Enter"){ e.preventDefault(); addPantryItem(); }
+});
 
 const ROI_EXCLUDE_CATEGORIES = new Set(["Fresh","Mixer","Pantry","Garnish"]);
 function isShoppableBottle(ing){
@@ -502,25 +543,11 @@ function renderROI(owned){
   if(rows.length===0){
     tbody.innerHTML = '<tr><td colspan="4" class="small">Nothing just one bottle away right now — the shelf is in good shape.</td></tr>';
   }
-  renderShelfAddedList();
-}
-function renderShelfAddedList(){
-  const el = document.getElementById("shelfAddedList");
-  if(!shelfAdditions.size){ el.innerHTML = ""; return; }
-  el.innerHTML = "<p class=\"small\" style=\"width:100%;margin:0 0 2px\"><strong>Added by you:</strong></p>" +
-    [...shelfAdditions].map(c => "<span class=\"badge neutral shelf-added\">" + c + ' <button type="button" class="remove-shelf" data-canon="' + c + '">\u00d7</button></span>').join("");
 }
 document.getElementById("roiTable").addEventListener("click", (e) => {
   const btn = e.target.closest(".roi-add-btn");
   if(!btn) return;
   shelfAdditions.add(btn.dataset.ing);
-  saveShelfAdditions();
-  renderAll();
-});
-document.getElementById("shelfAddedList").addEventListener("click", (e) => {
-  const btn = e.target.closest(".remove-shelf");
-  if(!btn) return;
-  shelfAdditions.delete(btn.dataset.canon);
   saveShelfAdditions();
   renderAll();
 });
@@ -644,6 +671,7 @@ function renderCards(owned){
     return a.missing.length - b.missing.length || a.name.localeCompare(b.name);
   });
   document.getElementById("cardCount").textContent = results.length + " of " + evaluated.length + " in the catalog";
+  lastCardResultCount = results.length;
   const grid = document.getElementById("cards");
   grid.innerHTML = "";
   results.forEach(r => {
@@ -791,11 +819,45 @@ function findBestNameMatches(text){
   return Object.values(byName).sort((a,b)=>b.score-a.score);
 }
 
+function handleTopSearchFuzzy(){
+  const raw = document.getElementById("universalSearch").value;
+  const q = raw.trim();
+  const resultEl = document.getElementById("pasteResult");
+  const clearIfOwned = () => {
+    if(topSearchOwnsResult){
+      resultEl.innerHTML = "";
+      resultEl.className = "";
+      pasteMode = "empty";
+      lastNameMatches = [];
+      topSearchOwnsResult = false;
+    }
+  };
+  if(!q || lastCardResultCount > 0){
+    clearIfOwned();
+    return;
+  }
+  const matches = findBestNameMatches(q);
+  if(matches.length && matches[0].score >= 50){
+    pasteMode = "name";
+    lastNameMatches = matches;
+    topSearchOwnsResult = true;
+    renderNameMatch(matches);
+    if(resultEl.scrollIntoView) resultEl.scrollIntoView({behavior:"smooth", block:"center"});
+  } else {
+    pasteMode = "empty";
+    lastNameMatches = [];
+    topSearchOwnsResult = true;
+    resultEl.innerHTML = '<p class="small">No match for \u201c' + q + '\u201d in the catalog yet.</p>';
+    resultEl.className = "paste-result";
+  }
+}
+
 let pasteMode = "empty";
 let lastNameMatches = [];
 let currentGuesses = [];
 
 document.getElementById("btnParse").addEventListener("click", () => {
+  topSearchOwnsResult = false;
   const text = document.getElementById("pasteBox").value;
   if(!text.trim()){
     pasteMode = "empty";
@@ -909,7 +971,12 @@ function renderAll(){
   if(pasteMode === "lines" && currentGuesses.length) computePasteResult();
   else if(pasteMode === "name" && lastNameMatches.length) renderNameMatch(lastNameMatches);
 }
-["universalSearch","baseFilter"].forEach(id => document.getElementById(id).addEventListener("input", renderAll));
+document.getElementById("baseFilter").addEventListener("input", renderAll);
+document.getElementById("universalSearch").addEventListener("input", () => {
+  goToTab("catalog");
+  renderAll();
+  handleTopSearchFuzzy();
+});
 
 initFilterOptions();
 populateCanonList();
