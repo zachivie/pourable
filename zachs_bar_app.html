@@ -859,6 +859,11 @@ function saveCustomRecipe(){
   }).filter(i => i.name);
   if(!name){ msg.textContent = "Give the recipe a name first."; return; }
   if(!ingredients.length){ msg.textContent = "Add at least one ingredient."; return; }
+  const nameLower = name.toLowerCase();
+  if(RECIPES.some(r => r.name.toLowerCase() === nameLower)){
+    msg.textContent = "You’ve already got a recipe named that — try a different name.";
+    return;
+  }
   const rec = {
     name, base: base || "Other", style, glass, tags,
     ingredients, family: "Custom", source: "custom",
@@ -899,7 +904,29 @@ document.querySelectorAll("#statTiles .stat").forEach(btn => {
 });
 
 let expandedCards = new Set();
+function duplicateRecipeForEdit(name){
+  const src = RECIPES.find(r => r.name === name);
+  if(!src) return;
+  goToTab("recipes");
+  document.getElementById("customName").value = src.name + " (mine)";
+  document.getElementById("customBase").value = src.base || "";
+  document.getElementById("customStyle").value = src.style || "";
+  document.getElementById("customGlass").value = src.glass || "";
+  document.getElementById("customTags").value = (src.tags||[]).join(", ");
+  document.getElementById("customIngredientRows").innerHTML = "";
+  (src.ingredients||[]).forEach(i => addIngredientRow(i.amount||"", i.name||""));
+  if(!(src.ingredients||[]).length) seedIngredientRows();
+  const msg = document.getElementById("customRecipeMsg");
+  msg.textContent = "Copied from “" + src.name + "” — tweak it, then save.";
+  document.querySelector('section[data-tab="recipes"]').scrollIntoView({behavior:"smooth", block:"start"});
+}
 document.getElementById("cards").addEventListener("click", (e) => {
+  const dupBtn = e.target.closest(".dup-btn");
+  if(dupBtn){
+    const card = dupBtn.closest(".card");
+    duplicateRecipeForEdit(card.dataset.name);
+    return;
+  }
   const pinBtn = e.target.closest(".pin-btn");
   if(pinBtn){
     const card = pinBtn.closest(".card");
@@ -969,6 +996,7 @@ function renderCards(owned){
       "<div class=\"meta\">" + r.base + " \u00b7 " + (r.style||"") + " \u00b7 " + (r.glass||"") + "</div>" +
       (r.tags||[]).slice(0,3).map(t=>'<span class="badge neutral">'+t+'</span>').join("") +
       "<ul class=\"ing-list\">" + r.ingredients.map(i=>"<li><span class=\"amt\">"+(i.amount?scaleAmount(i.amount, headcount)+" ":"")+"</span>"+i.name+(r.missing.includes(i.name)?' <span class="missing">(missing)</span>':'')+"</li>").join("") + "</ul>" +
+      "<div class=\"row\" style=\"margin-top:8px\"><button type=\"button\" class=\"dup-btn\">Duplicate \u0026 Edit</button></div>" +
       "</div>";
     grid.appendChild(div);
   });
