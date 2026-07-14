@@ -173,6 +173,16 @@ color:var(--accent);cursor:pointer;font-family:'Inter',sans-serif;white-space:no
 </section>
 
 <section class="panel" data-tab="catalog">
+  <span class="eyebrow">Drink Roulette</span>
+  <h2>What Should I Make?</h2>
+  <p class="small" style="margin-top:4px">Only ever pulls from what you can pour right now — nothing you're missing a bottle for.</p>
+  <div id="rouletteResult" style="margin-top:10px"></div>
+  <div class="row" style="margin-top:10px">
+    <button class="primary" id="btnRoulette">Spin</button>
+  </div>
+</section>
+
+<section class="panel" data-tab="catalog">
   <span class="eyebrow">At a Glance</span>
   <div class="stats" id="statTiles">
     <button type="button" class="stat active" data-filter="all" id="statAll"><strong id="countAll">0</strong><span>In the Catalog</span></button>
@@ -620,6 +630,74 @@ function evalRecipe(r, owned){
 function statusLabel(r){
   return r.status==="now" ? "Ready to pour" : r.status==="one" ? "One bottle out" : r.status==="two" ? "Two bottles out" : r.missing.length + " bottles out";
 }
+const NOTABLE_RECIPES = new Set(["Old Fashioned", "Manhattan", "Daiquiri", "Negroni", "Martini", "Margarita", "Whiskey Sour", "Sazerac", "Mojito", "Moscow Mule", "Mai Tai", "Cosmopolitan", "Aviation", "Last Word", "Sidecar", "French 75", "Boulevardier", "Paper Plane", "Penicillin", "Vieux Carré", "Tom Collins", "Piña Colada", "Espresso Martini", "Dark 'n' Stormy", "Painkiller", "Bramble", "Corpse Reviver #2", "Vesper", "Whiskey Smash", "Irish Coffee"]);
+let rouletteName = null;
+function getRouletteCandidates(){
+  const owned = ownedSet();
+  const baseF = document.getElementById("baseFilter").value;
+  return RECIPES.map(r => evalRecipe(r, owned)).filter(r => {
+    if(r.status !== "now") return false;
+    if(baseF !== "all" && r.base !== baseF) return false;
+    if(activeTags.size){
+      const rTags = r.tags||[];
+      for(const t of activeTags){ if(!rTags.includes(t)) return false; }
+    }
+    if(activeMood && !recipeMatchesMood(r, activeMood)) return false;
+    return true;
+  });
+}
+function pickRouletteDrink(){
+  const candidates = getRouletteCandidates();
+  if(!candidates.length) return null;
+  const weighted = candidates.map(r => {
+    let weight = 1;
+    if(NOTABLE_RECIPES.has(r.name)) weight += 3;
+    if(favorites.has(r.name)) weight += 3;
+    return {r: r, weight: weight};
+  });
+  const total = weighted.reduce((sum,w)=>sum+w.weight, 0);
+  let roll = Math.random() * total;
+  for(const w of weighted){
+    roll -= w.weight;
+    if(roll <= 0) return w.r;
+  }
+  return weighted[weighted.length-1].r;
+}
+function renderRouletteResult(r){
+  const el = document.getElementById("rouletteResult");
+  if(!r){
+    el.innerHTML = '<p class="small">Nothing’s fully ready to pour right now with the current filters — check Worth Adding to the Shelf, or clear a filter.</p>';
+    return;
+  }
+  const isPinned = favorites.has(r.name);
+  let html = '<div class="paste-result">';
+  html += '<div style="margin-bottom:6px;display:flex;align-items:center;gap:8px"><strong>' + r.name + '</strong> <span class="small">' + r.base + (r.style?(" · "+r.style):"") + '</span><button type="button" class="pin-btn' + (isPinned?' pinned':'') + '" id="roulettePin">' + (isPinned?"★":"☆") + '</button></div>';
+  html += '<ul>' + r.ingredients.map(i=>"<li><span class=\"amt\">"+(i.amount?scaleAmount(i.amount, headcount)+" ":"")+"</span>"+i.name+"</li>").join("") + '</ul>';
+  html += '</div>';
+  el.innerHTML = html;
+  const pinBtn = document.getElementById("roulettePin");
+  pinBtn.addEventListener("click", () => {
+    if(favorites.has(r.name)) favorites.delete(r.name); else favorites.add(r.name);
+    saveFavorites();
+    document.getElementById("countFav").textContent = favorites.size;
+    renderRouletteResult(r);
+  });
+}
+function spinRoulette(){
+  const r = pickRouletteDrink();
+  rouletteName = r ? r.name : null;
+  renderRouletteResult(r);
+}
+function refreshRouletteIfNeeded(){
+  const candidates = getRouletteCandidates();
+  const stillValid = rouletteName && candidates.some(r => r.name === rouletteName);
+  if(stillValid){
+    renderRouletteResult(candidates.find(r => r.name === rouletteName));
+  } else {
+    spinRoulette();
+  }
+}
+document.getElementById("btnRoulette").addEventListener("click", spinRoulette);
 
 function makeToggleRow(canon, label, on, overrides, storageKey){
   const row = document.createElement("div");
@@ -1258,6 +1336,7 @@ function renderAll(){
   renderCards(owned);
   if(pasteMode === "lines" && currentGuesses.length) computePasteResult();
   else if(pasteMode === "name" && lastNameMatches.length) renderNameMatch(lastNameMatches);
+  refreshRouletteIfNeeded();
 }
 document.getElementById("baseFilter").addEventListener("input", renderAll);
 
@@ -1340,7 +1419,6 @@ document.getElementById("btnImportBar").addEventListener("click", () => {
   populateCanonList();
   populateBaseList();
   renderCustomRecipeList();
-  document.getElementById("countFav").textContent = favorites.size;
   renderAll();
 });
 
