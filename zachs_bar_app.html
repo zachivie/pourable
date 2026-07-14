@@ -200,8 +200,8 @@ color:var(--accent);cursor:pointer;font-family:'Inter',sans-serif;white-space:no
   <div class="stats" id="statTiles">
     <button type="button" class="stat active" data-filter="all" id="statAll"><strong id="countAll">0</strong><span>In the Catalog</span></button>
     <button type="button" class="stat" data-filter="now" id="statNow"><strong id="countNow">0</strong><span>Ready to Pour</span></button>
-    <button type="button" class="stat" data-filter="one" id="statOne"><strong id="countOne">0</strong><span>One Bottle Out</span></button>
-    <button type="button" class="stat" data-filter="two" id="statTwo"><strong id="countTwo">0</strong><span>Two Bottles Out</span></button>
+    <button type="button" class="stat" data-filter="one" id="statOne"><strong id="countOne">0</strong><span>Missing 1 Ingredient</span></button>
+    <button type="button" class="stat" data-filter="two" id="statTwo"><strong id="countTwo">0</strong><span>Missing 2 Ingredients</span></button>
     <button type="button" class="stat" data-filter="fav" id="statFav"><strong id="countFav">0</strong><span>★ Favorites</span></button>
   </div>
   <p class="small" style="margin-top:8px">Tap a number to jump to that list.</p>
@@ -220,9 +220,8 @@ color:var(--accent);cursor:pointer;font-family:'Inter',sans-serif;white-space:no
   <div id="pasteResult"></div>
 </section>
 
-<section class="panel" data-tab="catalog">
+<section class="panel" data-tab="catalog" id="catalogSection">
   <span class="eyebrow">The Catalog</span>
-  <h2>What's Pourable</h2>
   <div class="row" style="margin-top:10px;align-items:center">
     <span class="small">Serving for</span>
     <button type="button" id="headcountMinus">−</button>
@@ -233,7 +232,7 @@ color:var(--accent);cursor:pointer;font-family:'Inter',sans-serif;white-space:no
   <div class="filters" style="margin-top:10px">
     <select id="baseFilter"><option value="all">All spirits</option></select>
   </div>
-  <p class="small" style="margin-top:10px">Tap tags to combine them — patio + gin finds both, or tap a mood to match how you're feeling.</p>
+  <p class="small" style="margin-top:10px">Tap modes and moods to combine them — patio + gin finds both, or match how you're feeling.</p>
   <div class="filters" id="tagFilters">
     <button type="button" class="chip mood-btn" data-mood="lighter">Something Lighter</button>
     <button type="button" class="chip mood-btn" data-mood="reflective">Feeling Reflective</button>
@@ -641,7 +640,7 @@ function evalRecipe(r, owned){
   return Object.assign({}, r, {missing: missing, status: status});
 }
 function statusLabel(r){
-  return r.status==="now" ? "Ready to pour" : r.status==="one" ? "One bottle out" : r.status==="two" ? "Two bottles out" : r.missing.length + " bottles out";
+  return r.status==="now" ? "Ready to pour" : r.status==="one" ? "Missing 1 ingredient" : r.status==="two" ? "Missing 2 ingredients" : "Missing " + r.missing.length + " ingredients";
 }
 const NOTABLE_RECIPES = new Set(["Old Fashioned", "Manhattan", "Daiquiri", "Negroni", "Martini", "Margarita", "Whiskey Sour", "Sazerac", "Mojito", "Moscow Mule", "Mai Tai", "Cosmopolitan", "Aviation", "Last Word", "Sidecar", "French 75", "Boulevardier", "Paper Plane", "Penicillin", "Vieux Carré", "Tom Collins", "Piña Colada", "Espresso Martini", "Dark 'n' Stormy", "Painkiller", "Bramble", "Corpse Reviver #2", "Vesper", "Whiskey Smash", "Irish Coffee"]);
 let rouletteName = null;
@@ -1087,7 +1086,7 @@ document.querySelectorAll("#statTiles .stat").forEach(btn => {
     currentStatusFilter = btn.dataset.filter;
     document.querySelectorAll("#statTiles .stat").forEach(b => b.classList.toggle("active", b===btn));
     renderAll();
-    document.getElementById("cards").scrollIntoView({behavior:"smooth", block:"start"});
+    document.getElementById("catalogSection").scrollIntoView({behavior:"smooth", block:"start"});
   });
 });
 
