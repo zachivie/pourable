@@ -198,13 +198,25 @@ color:var(--accent);cursor:pointer;font-family:'Inter',sans-serif;white-space:no
 </section>
 
 <section class="panel" data-tab="catalog">
+  <span class="eyebrow">Ready to Pour</span>
+  <div class="stats" id="readyTiles">
+    <button type="button" class="stat" data-filter="now" id="statNow"><strong id="countNow">0</strong><span>Ready to Pour</span></button>
+  </div>
+  <p class="small" style="margin-top:8px">Tap it to jump straight to what you can make right now.</p>
+</section>
+
+<section class="panel" data-tab="catalog">
+  <span class="eyebrow">Recently Viewed</span>
+  <div id="recentsList"><p class="small">Recipes you open will show up here.</p></div>
+</section>
+
+<section class="panel" data-tab="catalog">
   <span class="eyebrow">At a Glance</span>
   <div class="stats" id="statTiles">
-    <button type="button" class="stat active" data-filter="all" id="statAll"><strong id="countAll">0</strong><span>In the Catalog</span></button>
-    <button type="button" class="stat" data-filter="now" id="statNow"><strong id="countNow">0</strong><span>Ready to Pour</span></button>
     <button type="button" class="stat" data-filter="one" id="statOne"><strong id="countOne">0</strong><span>Missing 1 Ingredient</span></button>
     <button type="button" class="stat" data-filter="two" id="statTwo"><strong id="countTwo">0</strong><span>Missing 2 Ingredients</span></button>
     <button type="button" class="stat" data-filter="fav" id="statFav"><strong id="countFav">0</strong><span>★ Favorites</span></button>
+    <button type="button" class="stat active" data-filter="all" id="statAll"><strong id="countAll">0</strong><span>In the Catalog</span></button>
   </div>
   <p class="small" style="margin-top:8px">Tap a number to jump to that list.</p>
 </section>
@@ -361,6 +373,26 @@ let currentStatusFilter = "all";
 let activeMood = null;
 let headcount = parseInt(localStorage.getItem("zachsBarHeadcount")||"1", 10);
 if(!headcount || headcount < 1) headcount = 1;
+let recentlyViewed = JSON.parse(localStorage.getItem("zachsBarRecentlyViewed") || "[]");
+function saveRecentlyViewed(){
+  localStorage.setItem("zachsBarRecentlyViewed", JSON.stringify(recentlyViewed));
+}
+function recordRecentlyViewed(name){
+  recentlyViewed = recentlyViewed.filter(n => n !== name);
+  recentlyViewed.unshift(name);
+  recentlyViewed = recentlyViewed.slice(0, 5);
+  saveRecentlyViewed();
+  renderRecents();
+}
+function renderRecents(){
+  const el = document.getElementById("recentsList");
+  if(!el) return;
+  if(!recentlyViewed.length){
+    el.innerHTML = '<p class="small">Recipes you open will show up here.</p>';
+    return;
+  }
+  el.innerHTML = '<div class="filters">' + recentlyViewed.map(n => '<button type="button" class="chip recent-chip" data-name="' + n.replace(/"/g,"&quot;") + '">' + n + '</button>').join("") + '</div>';
+}
 
 const MOODS = {
   lighter: {tags:["refreshing","citrus","low abv","low calorie","sparkling","summer","fizzy","spring"], styles:["refreshing","citrus","low abv","fizzy"]},
@@ -1084,13 +1116,36 @@ function removeCustomRecipe(id){
   renderAll();
 }
 
-document.querySelectorAll("#statTiles .stat").forEach(btn => {
+function resetTagAndMoodFilters(){
+  activeTags = new Set();
+  activeMood = null;
+  document.querySelectorAll(".mood-btn").forEach(b => b.classList.remove("active"));
+  document.querySelectorAll("#tagFilters .tag-chip").forEach(c => c.classList.remove("active"));
+}
+document.querySelectorAll(".stat").forEach(btn => {
   btn.addEventListener("click", () => {
     currentStatusFilter = btn.dataset.filter;
-    document.querySelectorAll("#statTiles .stat").forEach(b => b.classList.toggle("active", b===btn));
+    document.querySelectorAll(".stat").forEach(b => b.classList.toggle("active", b===btn));
+    resetTagAndMoodFilters();
     renderAll();
     document.getElementById("catalogSection").scrollIntoView({behavior:"smooth", block:"start"});
   });
+});
+document.getElementById("recentsList").addEventListener("click", (e) => {
+  const btn = e.target.closest(".recent-chip");
+  if(!btn) return;
+  const name = btn.dataset.name;
+  currentStatusFilter = "all";
+  document.querySelectorAll(".stat").forEach(b => b.classList.toggle("active", b.dataset.filter==="all"));
+  resetTagAndMoodFilters();
+  renderAll();
+  const card = [...document.querySelectorAll("#cards .card")].find(c => c.dataset.name === name);
+  if(card){
+    card.classList.add("expanded");
+    expandedCards.add(name);
+    card.scrollIntoView({behavior:"smooth", block:"start"});
+  }
+  recordRecentlyViewed(name);
 });
 
 const STATUS_FILTER_LABELS = {now: "Ready to Pour", one: "Missing 1 Ingredient", two: "Missing 2 Ingredients", fav: "★ Favorites"};
@@ -1104,7 +1159,7 @@ function renderStatusFilterPill(){
 document.getElementById("statusFilterPill").addEventListener("click", (e) => {
   if(!e.target.closest("#btnClearStatusFilter")) return;
   currentStatusFilter = "all";
-  document.querySelectorAll("#statTiles .stat").forEach(b => b.classList.toggle("active", b.dataset.filter==="all"));
+  document.querySelectorAll(".stat").forEach(b => b.classList.toggle("active", b.dataset.filter==="all"));
   renderAll();
 });
 
@@ -1148,7 +1203,7 @@ document.getElementById("cards").addEventListener("click", (e) => {
   if(!card) return;
   const name = card.dataset.name;
   card.classList.toggle("expanded");
-  if(card.classList.contains("expanded")) expandedCards.add(name); else expandedCards.delete(name);
+  if(card.classList.contains("expanded")){ expandedCards.add(name); recordRecentlyViewed(name); } else { expandedCards.delete(name); }
 });
 document.getElementById("btnExpandAll").addEventListener("click", () => {
   document.querySelectorAll("#cards .card").forEach(c => { c.classList.add("expanded"); expandedCards.add(c.dataset.name); });
@@ -1465,6 +1520,7 @@ function renderAll(){
   if(pasteMode === "lines" && currentGuesses.length) computePasteResult();
   else if(pasteMode === "name" && lastNameMatches.length) renderNameMatch(lastNameMatches);
   refreshRouletteIfNeeded();
+  renderRecents();
 }
 document.getElementById("baseFilter").addEventListener("input", renderAll);
 
