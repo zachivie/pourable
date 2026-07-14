@@ -88,6 +88,14 @@ text-transform:uppercase;letter-spacing:.05em;border:1px solid transparent;margi
 ul{margin:8px 0 0;padding-left:18px;color:#4a4030;font-size:14px}
 .missing{color:var(--warn)}
 .amt{color:var(--muted);font-variant-numeric:tabular-nums}
+.roulette-frame{position:relative;background:var(--header-bg);border-radius:10px;padding:8px 12px;display:flex;align-items:center;gap:10px;overflow:hidden}
+.roulette-bulb{width:7px;height:7px;border-radius:50%;background:var(--header-muted);flex-shrink:0}
+.roulette-bulb.on{background:var(--header-gold)}
+.roulette-reel-window{flex:1;height:52px;overflow:hidden;position:relative;background:var(--panel);border-radius:8px}
+.roulette-reel-col{position:absolute;left:0;top:0;width:100%}
+.roulette-reel-row{height:52px;display:flex;align-items:center;justify-content:center;font-family:'Fraunces',Georgia,serif;font-weight:600;font-size:16.5px;color:var(--text);text-align:center;padding:0 8px}
+.roulette-confetti{position:absolute;left:50%;top:14px;width:6px;height:6px;border-radius:2px;pointer-events:none;transition:transform .7s cubic-bezier(.2,.8,.3,1),opacity .7s ease}
+#rouletteResult{transition:opacity .3s ease}
 .pantry-toggles{display:flex;flex-direction:column;gap:0;margin-top:8px}
 .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:11px 2px;
 border-bottom:1px solid var(--line);font-size:14px}
@@ -176,6 +184,11 @@ color:var(--accent);cursor:pointer;font-family:'Inter',sans-serif;white-space:no
   <span class="eyebrow">Drink Roulette</span>
   <h2>What Should I Make?</h2>
   <p class="small" style="margin-top:4px">Only ever pulls from what you can pour right now — nothing you're missing a bottle for.</p>
+  <div class="roulette-frame" id="rouletteFrame">
+    <div class="roulette-bulb" id="rouletteBulb1"></div>
+    <div class="roulette-reel-window"><div class="roulette-reel-col" id="rouletteReelCol"></div></div>
+    <div class="roulette-bulb" id="rouletteBulb2"></div>
+  </div>
   <div id="rouletteResult" style="margin-top:10px"></div>
   <div class="row" style="margin-top:10px">
     <button class="primary" id="btnRoulette">Spin</button>
@@ -683,18 +696,115 @@ function renderRouletteResult(r){
     renderRouletteResult(r);
   });
 }
-function spinRoulette(){
+function showRouletteStatic(r){
+  const col = document.getElementById("rouletteReelCol");
+  if(!col) return;
+  col.style.transition = "none";
+  col.style.transform = "translateY(0px)";
+  col.innerHTML = "";
+  const row = document.createElement("div");
+  row.className = "roulette-reel-row";
+  row.textContent = r ? r.name : "—";
+  col.appendChild(row);
+}
+function quietPickRoulette(){
   const r = pickRouletteDrink();
   rouletteName = r ? r.name : null;
   renderRouletteResult(r);
+  showRouletteStatic(r);
+}
+const ROULETTE_ROW_H = 52;
+function buildRouletteReel(winner, candidates){
+  const col = document.getElementById("rouletteReelCol");
+  col.style.transition = "none";
+  col.style.transform = "translateY(0px)";
+  col.innerHTML = "";
+  const pool = candidates.length ? candidates : [winner];
+  const seq = [];
+  const loops = 4;
+  for(let i=0;i<loops;i++){
+    for(let j=0;j<pool.length;j++){ seq.push(pool[(j + i*3) % pool.length]); }
+  }
+  seq.push(winner);
+  seq.forEach(item => {
+    const row = document.createElement("div");
+    row.className = "roulette-reel-row";
+    row.textContent = item.name;
+    col.appendChild(row);
+  });
+  return seq.length;
+}
+let rouletteBulbTimer = null;
+function startRouletteBulbs(){
+  const b1 = document.getElementById("rouletteBulb1");
+  const b2 = document.getElementById("rouletteBulb2");
+  (function tick(){
+    b1.classList.toggle("on");
+    b2.classList.toggle("on");
+    rouletteBulbTimer = setTimeout(tick, 180);
+  })();
+}
+function stopRouletteBulbs(){
+  clearTimeout(rouletteBulbTimer);
+  document.getElementById("rouletteBulb1").classList.remove("on");
+  document.getElementById("rouletteBulb2").classList.remove("on");
+}
+function rouletteConfetti(){
+  const frame = document.getElementById("rouletteFrame");
+  const colors = ["#e8a33d","#5f7a35","#af5a1f","#f0dba8"];
+  for(let i=0;i<10;i++){
+    const p = document.createElement("div");
+    p.className = "roulette-confetti";
+    p.style.background = colors[i % colors.length];
+    const ang = (Math.PI*2*i)/10;
+    const dist = 40 + Math.random()*16;
+    frame.appendChild(p);
+    requestAnimationFrame(() => {
+      p.style.transform = "translate(" + (Math.cos(ang)*dist) + "px," + (Math.sin(ang)*dist - 18) + "px) rotate(180deg)";
+      p.style.opacity = "0";
+    });
+    setTimeout(() => p.remove(), 750);
+  }
+}
+let rouletteSpinning = false;
+function spinRoulette(){
+  if(rouletteSpinning) return;
+  const candidates = getRouletteCandidates();
+  const r = pickRouletteDrink();
+  if(!r){
+    rouletteName = null;
+    renderRouletteResult(null);
+    return;
+  }
+  rouletteSpinning = true;
+  const btn = document.getElementById("btnRoulette");
+  btn.disabled = true;
+  document.getElementById("rouletteResult").style.opacity = "0";
+  startRouletteBulbs();
+  const total = buildRouletteReel(r, candidates);
+  requestAnimationFrame(() => {
+    const col = document.getElementById("rouletteReelCol");
+    col.style.transition = "transform 2.4s cubic-bezier(0.1,0.85,0.2,1)";
+    col.style.transform = "translateY(-" + ((total-1)*ROULETTE_ROW_H) + "px)";
+  });
+  setTimeout(() => {
+    rouletteSpinning = false;
+    btn.disabled = false;
+    stopRouletteBulbs();
+    rouletteName = r.name;
+    renderRouletteResult(r);
+    document.getElementById("rouletteResult").style.opacity = "1";
+    rouletteConfetti();
+  }, 2500);
 }
 function refreshRouletteIfNeeded(){
+  if(rouletteSpinning) return;
   const candidates = getRouletteCandidates();
   const stillValid = rouletteName && candidates.some(r => r.name === rouletteName);
   if(stillValid){
     renderRouletteResult(candidates.find(r => r.name === rouletteName));
   } else {
-    spinRoulette();
+    quietPickRoulette();
   }
 }
 document.getElementById("btnRoulette").addEventListener("click", spinRoulette);
